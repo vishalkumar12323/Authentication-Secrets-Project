@@ -6,12 +6,14 @@ import mongoose from "mongoose";
 import session from "express-session";
 import passport from "passport";
 import passportLocalMongoose from "passport-local-mongoose";
+import GoogleStrategy from "passport-google-oauth20";
+GoogleStrategy.Strategy;
+import findOrCreate from "mongoose-findorcreate";
 // import bcrypt from "bcrypt";
 // import encrypt from "mongoose-encryption";
 // import md5 from "md5";
 
 const app = express();
-const port = 3000;
 
 app.use(express.static("public"));
 app.use(
@@ -22,7 +24,7 @@ app.use(
 
 app.use(
   session({
-    secret: "our little secret.",
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
   })
@@ -35,6 +37,7 @@ mongoose.connect(process.env.DATABASE_URL);
 const userSchema = new mongoose.Schema({
   username: String,
   password: String,
+  googleId: String,
 });
 
 // userSchema.plugin(encrypt, {
@@ -42,16 +45,52 @@ const userSchema = new mongoose.Schema({
 //   encryptedFields: ["password"],
 // });
 userSchema.plugin(passportLocalMongoose);
+userSchema.plugin(findOrCreate);
 const User = new mongoose.model("user", userSchema);
 
 passport.use(User.createStrategy());
 
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+passport.serializeUser(function (user, done) {
+  done(null, user);
+});
+
+passport.deserializeUser(function (user, done) {
+  done(null, user);
+});
+
+passport.use(
+  new GoogleStrategy(
+    {
+      clientID: process.env.CLIENT_ID,
+      clientSecret: process.env.CLIENT_SECRET,
+      callbackURL: "http://localhost:3000/auth/google/secrets",
+      // userProfileURL: "https://www.googleapis.com/oauth2/v2/userinfo",
+    },
+    function (accessToken, refreshToken, profile, cb) {
+      console.log(profile);
+      User.findOrCreate({ googleId: profile.id }, function (err, user) {
+        return cb(err, user);
+      });
+    }
+  )
+);
 
 app.get("/", (req, res) => {
   res.render("home.ejs");
 });
+
+app.get(
+  "/auth/google",
+  passport.authenticate("google", { scope: ["profile"] })
+);
+
+app.get(
+  "/auth/google/secrets",
+  passport.authenticate("google", { failureRedirect: "/login" }),
+  (req, res) => {
+    res.redirect("/secrets");
+  }
+);
 
 app.get("/login", (req, res) => {
   res.render("login.ejs");
@@ -112,6 +151,7 @@ app.post("/login", async (req, res) => {
     }
   });
 });
-app.listen(port, () => {
-  console.log(`server listening on url http://localhost:${port}`);
+
+app.listen(process.env.PORT, () => {
+  console.log(`server listening on url http://localhost:${process.env.PORT}`);
 });
