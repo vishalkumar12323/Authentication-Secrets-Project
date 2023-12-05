@@ -38,6 +38,7 @@ const userSchema = new mongoose.Schema({
   username: String,
   password: String,
   googleId: String,
+  secret: String,
 });
 
 // userSchema.plugin(encrypt, {
@@ -67,7 +68,6 @@ passport.use(
       // userProfileURL: "https://www.googleapis.com/oauth2/v2/userinfo",
     },
     function (accessToken, refreshToken, profile, cb) {
-      console.log(profile);
       User.findOrCreate({ googleId: profile.id }, function (err, user) {
         return cb(err, user);
       });
@@ -100,23 +100,42 @@ app.get("/register", (req, res) => {
   res.render("register.ejs");
 });
 
-app.get("/secrets", (req, res) => {
+app.get("/secrets", async (req, res) => {
+  try {
+    const userSecret = await User.find({ userSecrets: { $ne: null } });
+    if (userSecret) {
+      res.render("secrets.ejs", { userWithSecret: userSecret });
+    } else {
+      res.redirect("/submit");
+    }
+  } catch (err) {
+    console.log(err);
+  }
+});
+
+app.get("/submit", function (req, res) {
   if (req.isAuthenticated()) {
-    res.render("secrets.ejs");
+    res.render("submit.ejs");
   } else {
     res.redirect("/login");
   }
 });
-
-app.get("/logout", (req, res) => {
-  req.logout(function (err) {
-    if (err) {
-      console.log(err);
+app.post("/submit", async function (req, res) {
+  const secret = req.body.secret;
+  try {
+    const foundedUser = await User.findById(req.user._id);
+    if (foundedUser) {
+      foundedUser.secret = secret;
+      foundedUser.save();
+      res.redirect("/secrets");
     } else {
-      res.redirect("/login");
+      res.redirect("/submit");
     }
-  });
+  } catch (err) {
+    console.log(err);
+  }
 });
+
 app.post("/register", function (req, res) {
   User.register(
     { username: req.body.username },
@@ -148,6 +167,16 @@ app.post("/login", async (req, res) => {
       passport.authenticate("local")(req, res, function () {
         res.redirect("/secrets");
       });
+    }
+  });
+});
+
+app.get("/logout", (req, res) => {
+  req.logout(function (err) {
+    if (err) {
+      console.log(err);
+    } else {
+      res.redirect("/login");
     }
   });
 });
